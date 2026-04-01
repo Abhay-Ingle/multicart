@@ -1,18 +1,20 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
+import bcrypt from "bcryptjs";
+
 import connectDb from "./lib/db";
 import User from "./models/user.model";
-import bcrypt from "bcryptjs";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
     Credentials({
       credentials: {
         email: { label: "Email", type: "text" },
-        password: { label: "Password", type: "password" },
+        password: { label: "Password", type: "text" },
       },
-      async authorize(credentials) {
+
+      async authorize(credentials, request) {
         await connectDb();
 
         const email = credentials.email as string;
@@ -22,14 +24,18 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           throw new Error("Email and password are required");
         }
 
+        // Include password field in query
         const user = await User.findOne({ email }).select("+password");
 
         if (!user) {
           throw new Error("User does not exist");
         }
 
+        // Check if user has a password (credential-based login)
         if (!user.password) {
-          throw new Error("This account was created with Google Sign-In. Please use Google to login.");
+          throw new Error(
+            "This account was created with Google Sign-In. Please use Google to login."
+          );
         }
 
         const isMatch = await bcrypt.compare(password, user.password);
@@ -48,8 +54,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     }),
 
     Google({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
     }),
   ],
 
@@ -69,29 +75,44 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         }
 
         user.id = dbUser._id.toString();
-        user.role = dbUser.role;
+        user.role = dbUser.role.toString();
       }
+
       return true;
     },
 
-    async jwt({ token, user }) {
+    jwt({ token, user }) {
       if (user) {
         token.id = user.id;
         token.name = user.name;
         token.email = user.email;
         token.role = user.role;
       }
+
       return token;
     },
 
-    async session({ session, token }) {
+    session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string;
         session.user.name = token.name as string;
         session.user.email = token.email as string;
         session.user.role = token.role as string;
       }
+
       return session;
     },
   },
+
+  pages: {
+    signIn: "/login",
+    error: "/login",
+  },
+
+  session: {
+    strategy: "jwt",
+    maxAge: 10 * 24 * 60 * 60 * 1000,
+  },
+
+  secret: process.env.AUTH_SECRET,
 });
