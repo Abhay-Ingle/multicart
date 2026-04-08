@@ -5,8 +5,7 @@ import { NextRequest, NextResponse } from "next/server"
 import Stripe from "stripe"
 
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!
-)
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
 
 export async function POST(req:NextRequest){
     const sig = req.headers.get("stripe-signature")
@@ -14,18 +13,36 @@ export async function POST(req:NextRequest){
     let event;
     try {
          event = stripe.webhooks.constructEvent(
-            rawBody,sig!,process.env.STRIPE_WEBHOOK_SECRET!
+            rawBody,
+            sig!,
+            process.env.STRIPE_WEBHOOK_SECRET!
         )
     } catch (error) {
         console.log("signature verification failed",error)
+        return NextResponse.json({error: "signature verification failed"},{status: 400})
     }
 
-    if(event?.type === "checkout.session.completed"){
-        const session = event.data.object
-        await connectDb()
-        await Order.findByIdAndUpdate(session?.metadata?.orderId,{
-            isPaid:true
-        })
+    try {
+        if(event?.type === "checkout.session.completed"){
+            const session = event.data.object as any
+            await connectDb()
+            
+            const orderId = session?.metadata?.orderId
+            if (!orderId) {
+                return NextResponse.json({error: "No orderId in metadata"},{status: 400})
+            }
+            
+            await Order.findByIdAndUpdate(orderId,{
+                isPaid: true,
+                orderStatus: "confirmed",
+                "paymentDetails.stripePaymentId": session.payment_intent,
+                "paymentDetails.stripeSessionId": session.id,
+            })
+        }
+    } catch (error) {
+        console.error("Webhook processing error:", error)
+        return NextResponse.json({error: "Webhook processing failed"},{status: 500})
     }
-    return NextResponse.json({recieved:true},{status:200})
+    
+    return NextResponse.json({received: true},{status: 200})
 }

@@ -149,8 +149,8 @@ export async function POST(req: NextRequest) {
     const stripeSession = await stripe.checkout.sessions.create({
       mode: "payment",
       payment_method_types: ["card"],
-      success_url: `${process.env.NEXT_BASE_URL}/order-success`,
-      cancel_url: `${process.env.NEXT_BASE_URL}/order-failed`,
+      success_url: `${process.env.NEXT_BASE_URL}/order-success?session_id={CHECKOUT_SESSION_ID}&order_id=${order._id.toString()}`,
+      cancel_url: `${process.env.NEXT_BASE_URL}/order-failed?order_id=${order._id.toString()}`,
       line_items: [
         {
           price_data: {
@@ -166,7 +166,13 @@ export async function POST(req: NextRequest) {
       metadata: {
         orderId: order._id.toString(),
         productId: product._id.toString(),
+        userId: userId.toString(),
       },
+    });
+
+    // ✅ STORE SESSION ID IN ORDER
+    await Order.findByIdAndUpdate(order._id, {
+      "paymentDetails.stripeSessionId": stripeSession.id,
     });
 
     return NextResponse.json({ url: stripeSession.url }, { status: 200 });
