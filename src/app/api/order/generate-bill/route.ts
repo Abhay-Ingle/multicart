@@ -161,7 +161,7 @@ export async function GET(req: NextRequest) {
     pdfDoc.end();
 
     // Create response with PDF buffer
-    return new Promise((resolve) => {
+    return new Promise<Response>((resolve) => {
       pdfDoc.on("end", () => {
         const pdfBuffer = Buffer.concat(chunks);
         resolve(
